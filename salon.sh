@@ -1,65 +1,80 @@
 #!/bin/bash
 
 PSQL="psql -X --username=freecodecamp --dbname=salon --tuples-only -c"
+SALON_NAME="ANDY'S"
 
-echo -e "\n~~~~~ MY SALON ~~~~~\n"
-echo -e "Welcome to My Salon, how can I help you?\n"
+echo -e "\n~~~~~ $SALON_NAME SALON ~~~~~\n"
+
+echo -e "Welcome. How can I help you?"
 
 MAIN_MENU() {
-  # get services
-  SERVICES=$($PSQL "SELECT service_id, name FROM services ORDER BY service_id")
-  echo "$SERVICES" | while read SERVICE_ID BAR SERVICE_NAME
+  if [[ $1 ]]
+  then
+    echo -e "\n$1"
+  fi
+
+  # List available services
+  AVAILABLE_SERVICES=$($PSQL "SELECT service_id, name FROM services")
+  echo "$AVAILABLE_SERVICES" | while read SERVICE_ID BAR NAME
   do
-    echo "$SERVICE_ID) $SERVICE_NAME"
+    echo "$SERVICE_ID) $NAME"
   done
 
-  # service id selection
+  # get input for selected service
   read SERVICE_ID_SELECTED
 
-  SERVICE_ID_SELECTED=$($PSQL "SELECT service_id FROM services WHERE service_id = $SERVICE_ID_SELECTED")
-
-  # if not found
-  if [[ -z $SERVICE_ID_SELECTED ]]
+  # validate input before querying
+  if [[ ! $SERVICE_ID_SELECTED =~ ^[0-9]+$ ]]
   then
-    MAIN_MENU "I could not find that service. What would you like today?"
+    # display error message in case input is not valid
+    MAIN_MENU "This is not a valid number."
+
   else
-    # get customer info
-    echo -e "\nWhat's your phone number?"
-    read CUSTOMER_PHONE
+    SELECTED_SERVICE=$($PSQL "SELECT name FROM services WHERE service_id = $SERVICE_ID_SELECTED")
 
-    # if already a customer
-    CUSTOMER_NAME=$($PSQL "SELECT name FROM customers WHERE phone = '$CUSTOMER_PHONE'")
-
-    # if customer doesn't exit
-    if [[ -z $CUSTOMER_NAME ]]
+    if [[ -z $SELECTED_SERVICE ]]
     then
-      # get new customer name
-      echo -e "\nI don't have a record for that phone number, what's your name?"
-      read CUSTOMER_NAME
-
-      # insert new customer
-      INSERT_CUSTOMER_RESULT=$($PSQL "INSERT INTO customers(phone, name) VALUES('$CUSTOMER_PHONE', '$CUSTOMER_NAME')")
+      MAIN_MENU "I could not find that service. What would you like today?"
+    else
+      BOOK_A_SERVICE "$SERVICE_ID_SELECTED" "$SELECTED_SERVICE"
     fi
-
-    # get customer id
-    CUSTOMER_ID=$($PSQL "SELECT customer_id FROM customers WHERE phone = '$CUSTOMER_PHONE'")
-
-    # get service name
-    SERVICE_NAME=$($PSQL "SELECT name FROM services WHERE service_id = $SERVICE_ID_SELECTED")
-
-    # service time
-    echo -e "\nWhat time would you like your$SERVICE_NAME, $(echo $CUSTOMER_NAME | sed -r 's/^ *| *$//g')?"
-    read SERVICE_TIME
-
-    # insert service time
-    INSERT_TIME=$($PSQL "INSERT INTO appointments(customer_id, service_id, time) VALUES($CUSTOMER_ID, $SERVICE_ID_SELECTED, '$SERVICE_TIME')")
-
-    # get customer name
-    CUSTOMER_NAME=$($PSQL "SELECT name FROM customers WHERE phone = '$CUSTOMER_PHONE'")
-
-    # output message
-    echo -e "\nI have put you down for a$SERVICE_NAME at $SERVICE_TIME,$CUSTOMER_NAME."
   fi
 }
+
+
+BOOK_A_SERVICE() {
+  # get phone number
+  echo -e "\nWhat's your phone number?"
+  read CUSTOMER_PHONE
+  CUSTOMER_ID=$($PSQL "SELECT customer_id FROM customers WHERE phone = '$CUSTOMER_PHONE'")
+
+  # # if not found
+  if [[ -z $CUSTOMER_ID ]]
+  then
+    # insert a new customer
+    echo -e "\nI don't have record for that phone number, what's your name?"
+    read CUSTOMER_NAME
+    INSERT_CUSTOMER_RESULT=$($PSQL "INSERT INTO customers(phone, name) VALUES('$CUSTOMER_PHONE', '$CUSTOMER_NAME')")
+  fi
+
+  # get customer id
+  CUSTOMER_ID_NO=$($PSQL "SELECT customer_id FROM customers WHERE phone = '$CUSTOMER_PHONE'")
+
+  echo -e "\nWhat time would you like your $(echo $SELECTED_SERVICE | sed -r 's/^ *| *$//g'), $CUSTOMER_NAME?"
+  read SERVICE_TIME
+  BOOK_APPOINTMENT "$SERVICE_ID_SELECTED" "$CUSTOMER_ID_NO" "$SERVICE_TIME" "$CUSTOMER_NAME"
+}
+
+
+BOOK_APPOINTMENT(){
+  APPOINTMENT_RESULT=$($PSQL "INSERT INTO appointments(service_id, customer_id, time) VALUES($1, $2, '$3')")
+  SERVICE=$($PSQL "SELECT name FROM services WHERE service_id=$1")
+
+  if [[ $APPOINTMENT_RESULT == "INSERT 0 1" ]]
+  then
+    echo -e "\nI have put you down for a $(echo $SERVICE | sed -r 's/^ *| *$//g') at $3, $(echo $4 | sed -r 's/^ *| *$//g')."
+  fi
+}
+
 
 MAIN_MENU
